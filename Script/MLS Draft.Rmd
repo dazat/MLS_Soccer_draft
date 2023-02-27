@@ -1,0 +1,791 @@
+---
+title: "MLS Project"
+author: "Tony Daza"
+date: "2023-01-30"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true 
+    code_folding: hide
+    theme: cerulean
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# MLS Soccer Project  
+
+In this project I will be examining the data about MLS soccer players. It started out by finding a data set on kaggle.com by Joseph Mohr. The data consisted of players, goalkeepers, matches, and standings for the MLS starting from the beginning of the season, but the data was limited to player game stats. From there I found player salary data from the MLS Player's Association yearly reports. That proved to be challenging as the files were yearly and in pdf form, but after downloading them to adobe and importing them as excel files I was able to clean the data and merge them to the original data. The salary data was handy, but of course I wanted more. I went searching for race data to answer the question, does race impact player wages, but I could not find race data publicly available. Instead, I found data on player nationalities from FBref, I picked 2017-2020 as the kaggle dataset only ran through 2020. The final dataset has players and goalkeepers combined with player stats, player salaries, nationality, and club. 
+
+
+
+```{r import, echo=FALSE, message=FALSE}
+library(needs)
+library(stringi)
+needs(tidyverse, rio, dplyr, gt, here, psych)
+library(ggpubr)
+#install.packages("DT")
+library(DT)
+
+library(readxl)
+library(here)
+
+#install.packages("plotly")
+library(plotly)
+library(forcats)
+
+#install.packages("ggthemes")
+library(ggthemes)
+
+# Importing the original dataset
+MLS_GK <- import(here("Data/MLS/all_goalkeepers.csv"))
+MLS_Players <- import(here("Data/MLS/all_players.csv"))
+
+
+# All players that had at least 1 minute of game time
+Active_Players <- MLS_Players %>%
+  filter(MINS != 0)
+
+Active_Players$Player <- stri_trans_general(Active_Players$Player, id = "Latin-ASCII")
+
+Active_Players$Player <- gsub("-", "", Active_Players$Player)
+
+
+# As the name states. Goalkeepers with more than one minute of game time.
+Active_Gk <- MLS_GK %>%
+  filter(MINS != 0)
+
+Active_Gk$Player <- stri_trans_general(Active_Gk$Player, id = "Latin-ASCII")
+
+Active_Gk$Player <- gsub("-", "", Active_Gk$Player)
+
+```
+
+Now that we have our datasets for players we can examine some data about them. 
+
+# Descriptive Stats 
+
+## Player Minutes
+
+```{r descriptive, fig.height= 10, fig.width=10}
+describe(Active_Players$MINS)
+
+# Active_Players %>%
+#   filter(Year == 2020) %>%
+#   ggplot(aes(x = MINS, y = POS))+
+#   geom_col(fill = 'Cornflowerblue')+
+#   facet_wrap(~Club)+
+#   theme_minimal()
+
+# Weird, there is no club with the abbreviation LFC in the MLS. I looked into it and it looks like it is actually meant to be LAFC. So I will mutate the cases of LFC to LAFC.
+
+Active_Players$Club <-replace(Active_Players$Club, Active_Players$Club == "LFC", "LAFC")
+Active_Players$Club <-replace(Active_Players$Club, Active_Players$Club == "NY", "NYC")
+Active_Players$Club <-replace(Active_Players$Club, Active_Players$Club == "MCF", "MTL")
+
+# I had noticed there was a similar issue for New York City FC and Montreal CF
+
+Active_Players %>%
+  filter(Year == 2020) %>%
+  ggplot(aes(x = MINS, y = POS))+
+  geom_col(fill = 'Darkorchid2')+
+  facet_wrap(~Club)+
+  theme_minimal()+
+  labs(x = "Minutes Played", y = "Position Played", title = "Minutes played by Position in 2020",
+       subtitle = "Separated by Club", caption = "Data from Joseph Mohr: Major League Soccer Dataset")
+
+```
+
+To be honest, this data is not all that helpful in visualizing anything. What I would be more interested in showing would be number of players used in a season by club. To show which teams used a wide array of players compared to those that had a core group.
+
+```{r}
+#First let's look at the format
+str(Active_Players)
+
+# Let's change the Position to factors. 
+Active_Players$POS <- as.factor(Active_Players$POS)
+Active_Players$Club <- as.factor(Active_Players$Club)
+
+# Player Plot with all players but it is too much
+# player_plot <- Active_Players %>%
+# filter(Year == 2020) %>%
+# group_by(Club, Player) %>%
+# mutate(Player = reorder(Player, MINS)) %>%
+# ggplot(aes(MINS, Player)) +
+# geom_col(fill = "#5A9D5A")+
+# theme_minimal()
+# player_plot
+
+# Active_Players %>%
+#   group_by(Club) %>%
+#   filter(Year == 2020) %>%
+#   count(Player)%>%
+#   summarise(Player_Total = sum(Player))
+
+needs(data.table, forcats)
+
+Active_Players %>%
+  filter(Year == 2020, Club != "")%>%
+  count(Club) %>%
+  mutate(Club = fct_reorder(Club, desc(n))) %>%
+  ggplot()+
+  geom_col(aes(x = n, y = Club, fill = Club), show.legend = FALSE)+
+  theme_minimal()+
+  labs(x = "Number of Players", y = "")+
+  scale_x_continuous(name="Number of Active Field Players", breaks=seq(0,30,3))+
+  scale_fill_viridis_d()
+
+```
+
+One of the other areas of interest would be to gather data on player salaries and add it to the dataset to examine which players had the best "bang for your buck" on goals, passes, saves, etc. 
+
+There is data on salaries available, but it is a pdf document so I need to learn how to get the data off a pdf into a data structure I can gather in R.
+
+## Number of players
+
+```{r mls_all}
+
+
+Active_Players %>%
+  filter(Year == 2020, Club != "")%>%
+  count(Club) %>%
+  mutate(Club = fct_reorder(Club, desc(n))) %>%
+  ggplot()+
+  geom_col(aes(x = n, y = Club, fill = Club), show.legend = FALSE)+
+  theme_minimal()+
+  labs(x = "Number of Players", y = "")+
+  scale_x_continuous(name="Number of Active Field Players", breaks=seq(0,30,3))+
+  scale_fill_viridis_d()
+
+
+```
+
+
+```{r matches}
+
+match <- import(here("Data/MLS/matches.csv"))
+
+```
+
+This chunk has been added because I realized that I needed the goal keeper data to have an accurate display of club payments. In addition, I figured that including all players that I could would give me the most accurate display of club expenditure on player wages, even if the player did not play. So this chunk did not filter out players with zero minutes, but is limited to 2017-2020.
+
+# Data Cleaning
+
+```{r, message=FALSE}
+### Need to merge GK and Player data-sets for salary
+MLS_Players17_20 <- MLS_Players %>% filter(Year == 2017 | Year == 2018 | Year == 2019 | Year == 2020)
+
+MLS_Players17_20 <- MLS_Players17_20 %>% select(-c("Club","GWG", "PKG/A", "GWA"))
+
+MLS_GK17_20 <- MLS_GK %>% filter(Year == 2017 | Year == 2018 | Year == 2019 | Year == 2020)
+
+MLS_GK17_20 <- MLS_GK17_20 %>% select(-c("Club", "PKG/A", "W", "L", "T", "W%"))
+
+
+Players_all_17_20 <- merge(MLS_Players17_20, MLS_GK17_20, by = c("Player", "POS", "MINS","GP", "GS", "Year", "Season"), all = TRUE)
+
+Players_all_17_20$Player <- stri_trans_general(Players_all_17_20$Player, id = "Latin-ASCII")
+
+Players_all_17_20$Player <- gsub("-", "", Players_all_17_20$Player)
+
+
+
+
+```
+
+
+```{r salary, message=FALSE}
+
+### Reading in the 2019 player salaries
+sal_19 <- read_xlsx(here("Data/Salary 19.xlsx"), skip = 1)
+
+### Adjusting the column names
+fix <- c(Base_Salary_19 = "Base Salary 19", Total_Comp_19 = "Base Guaranteed Comp 19")
+sal_19 <- rename(sal_19, all_of(fix))
+
+### Combining first and last name to create a combined player name
+sal_19$Player <- apply(sal_19[, c("First Name", "Last Name")], 1,
+                      function(i){ paste(na.omit(i), collapse = " ") })
+
+### Removing accents from names as the original list to merge to does not have accents
+sal_19$Player <- stri_trans_general(sal_19$Player, id = "Latin-ASCII")
+
+### Removing hyphens between names
+sal_19$Player <- gsub("-", "", sal_19$Player)
+
+### Selecting only club, salary, and name
+sal_19 <- sal_19 %>% select(c("Club", "Base_Salary_19", "Total_Comp_19", "Player"))
+
+
+
+# I need to figure out how to get the player name to merge correctly. There is some missing data for player names that are not identical.
+
+
+```
+
+
+
+```{r add in 21, message=FALSE, warning=FALSE}
+# 2019 Salaries are in, but let's add in 2017, 2018, and 2020
+###############################################################################
+### Importing and cleaning 2017 salaries
+sal_17 <- read_xlsx(here("Data/Salary 17.xlsx"), skip = 1, col_names = TRUE)
+### Fixing weird spacing in the name column that caused errors
+fix <- c(First_Name = "First Name", Last_Name = "Last Name", Base_Salary_17 = "Base Salary", Total_Comp_17 = "Compensation")
+sal_17 <- rename(sal_17, all_of(fix))
+
+### Combining first and last name while ignoring NAs
+sal_17$Player <- apply(sal_17[, c("First_Name", "Last_Name")], 1,
+                      function(i){ paste(na.omit(i), collapse = " ") })
+
+### Removing any accent marks in names to combine with existing data
+sal_17$Player <- stri_trans_general(sal_17$Player, id = "Latin-ASCII")
+
+### Remove dash from names to match with original data
+sal_17$Player <- gsub("-", "", sal_17$Player)
+
+### Selecting only club, salary, and name
+sal_17 <- sal_17 %>% select(c("Club", "Base_Salary_17", "Total_Comp_17", "Player"))
+
+
+###############################################################################
+### Importing 2018 player salaries
+sal_18 <- read_xlsx(here("Data/Salary 18.xlsx"))
+
+### Fixing column names
+fix <- c(First_Name = "First Name", Last_Name = "Last Name", Base_Salary_18 = "Salary ", Total_Comp_18 = "Compensation ")
+sal_18 <- rename(sal_18, all_of(fix))
+
+sal_18$Player <- apply(sal_18[, c("First_Name", "Last_Name")], 1,
+                      function(i){ paste(na.omit(i), collapse = " ") })
+
+### Removing any accent marks in names to combine with existing data
+sal_18$Player <- stri_trans_general(sal_18$Player, id = "Latin-ASCII")
+
+### Remove dash from names to match original data
+sal_18$Player <- gsub("-", "", sal_18$Player)
+
+### Selecting only club, salary, and name
+sal_18 <- sal_18 %>% select(c("Club", "Base_Salary_18", "Total_Comp_18", "Player"))
+
+### Changing the salary to numeric from character
+sal_18$Base_Salary_18 <- as.numeric(sal_18$Base_Salary_18)
+
+sal_18$Total_Comp_18 <- as.numeric(sal_18$Total_Comp_18)
+
+
+
+###############################################################################
+### Importing 2020 Player salaries
+sal_20 <- read_xlsx(here("Data/Salary 20.xlsx"))
+
+fix <- c(Base_Salary_20 = "Base Salary 20", Total_Comp_20 = "Base Guaranteed Comp 20")
+sal_20 <- rename(sal_20, all_of(fix))
+
+sal_20$Player <- apply(sal_20[, c("First Name", "Last Name")], 1,
+                      function(i){ paste(na.omit(i), collapse = " ") })
+
+sal_20$Player <- stri_trans_general(sal_20$Player, id = "Latin-ASCII")
+
+sal_20 <- sal_20 %>% select(-contains('...6'))
+
+### Remove dash from names to match original data
+sal_20$Player <- gsub("-", "", sal_20$Player)
+
+### Selecting only club, salary, and name
+sal_20 <- sal_20 %>% select(c("Club", "Base_Salary_20", "Total_Comp_20", "Player"))
+
+
+
+
+###############################################################################
+# I am sure there is a better way but I don't know how
+### Combining 2017 and 2018 data
+Salaries <- merge(sal_17, sal_18, by = "Player", all = TRUE)
+
+### Fixing the club column names
+fix <- c(Club_17 = "Club.x", Club_18 = "Club.y")
+Salaries <- rename(Salaries, all_of(fix))
+
+### Adding in the 2019 salaries
+Salaries <- merge(Salaries, sal_19, by = "Player", all = TRUE)
+
+### Adding in the 2020 salaries
+Salaries <- merge(Salaries, sal_20, by = "Player", all = TRUE)
+
+### Fixing the club column names again
+fix <- c(Club_19 = "Club.x", Club_20 = "Club.y")
+Salaries <- rename(Salaries, all_of(fix))
+
+### Selecting just the club information
+Player_Club <- Salaries %>% select("Player", "Club_17", "Club_18", "Club_19", "Club_20")
+
+### Making the club data longer
+Player_Club_long <- Player_Club %>% pivot_longer(cols  = -Player, names_to = c("Club", "Year"), 
+    names_sep = "\\.")
+
+### Separating the club column by year
+Player_Club_long <- Player_Club_long %>%
+  separate(Club, c('Club', 'Year'), sep = "(.*)_()")
+
+### Adding 20 infront of the years
+Player_Club_long$Year <- sub("^", "20", Player_Club_long$Year)
+
+### Making year numeric
+Player_Club_long$Year <- as.numeric(Player_Club_long$Year)
+
+### selecting only a few columns
+Player_Club_long <- Player_Club_long %>% select("Player", "Year", "value")
+
+### Changing the column name to club
+Player_Club_long <- rename(Player_Club_long, Club = "value")
+
+### Removing players with NA values for club meaning they did not play in the league that year
+Player_Club_long <- Player_Club_long %>% filter(Club != "NA")
+
+#################################################################
+
+### Salaries needs to be in long format in order to be merged 
+### Selecting just the salary data
+Salaries_long <- Salaries %>% select("Player", "Base_Salary_17", "Total_Comp_17", "Base_Salary_18", "Total_Comp_18", "Base_Salary_19", "Total_Comp_19", "Base_Salary_20", "Total_Comp_20")
+
+### pivoting longer by salary type
+Salaries_long <- Salaries_long %>% pivot_longer(cols  = -Player, names_to = c("Salary", "Year"), 
+    names_sep = "\\.")
+
+### separating column by year
+Salaries_long <- Salaries_long %>%
+  separate(Salary, c('Salary', 'Year'), sep = "()_(.*)_()")
+
+### adding 20 in front of years to make it match with original data
+Salaries_long$Year <- sub("^", "20", Salaries_long$Year)
+
+### Making year numeric
+Salaries_long$Year <- as.numeric(Salaries_long$Year)
+
+
+  
+###############################################################################
+
+### Combining the salaries into the active players list by Player name
+Players_all_17_20 <- left_join(Players_all_17_20, Salaries_long, by = c("Player", "Year"))
+
+
+### Simplifying the position factor to three variables
+Players_all_17_20$POS <- fct_collapse(Players_all_17_20$POS, M = c("M","M-F", "M-D"), D = c("D","D-M"), F = c("F-M", "F"), Gk = "GK")
+
+### Finally I need to rename some columns
+fix <- c(Games = "GP", Starts = "GS", Goals = "G", Assists = "A", Shots = "SHTS.x", `Shots On Goal` = "SOG", `Home Goals` = "HmG", `Away Goals` = "RdG", `Goals/90` = "G/90min", `Home Assists` = "HmA", `Away Assists` = "RdA", `Scoring Percent` = "SC%", `Assists/90` = "A/90min", Fouls= "FC", `Fouls Suffered` = "FS", Offsides = "OFF", `Yellow Cards` = "YC", `Red Cards` = "RC", `Shots Faced` = "SHTS.y", Saves = "SV", `Goals Against` = "GA", `Goals Against Avg` = "GAA", Shoutouts = "ShO", `Save Pct` = "Sv%")
+Players_all_17_20 <- rename(Players_all_17_20, all_of(fix))
+
+
+# Now, I need to add in the correct club information because in this review I realized that the club info in the original dataset was incorrect. To do this I am going to remove the Club column and merge in the player club dataset I took from the player salaries.
+
+Players_all_17_20 <- left_join(Players_all_17_20, Player_Club_long, by = c("Player", "Year"))
+
+
+###############################################################################
+
+# I realized I need to pivot the salary data into a wider format
+
+Players_all_17_20 <- Players_all_17_20 %>%
+  pivot_wider(
+    names_from = Salary,
+    values_from = value)
+
+### For some reason there is a weird empty column now. I am sure I probably pivoted incorrectly, but I am just going to delete the extra column because that seems easier since I have the data in the right place
+
+Players_all_17_20 <- Players_all_17_20 %>% select(-c("NA"))
+
+fix <- c(`Base Salary` = "Base", `Total Comp` = "Total")
+Players_all_17_20 <- rename(Players_all_17_20, all_of(fix))
+
+# Much cleaner!
+
+
+#####################################################################
+
+# I am still deciding if I need/want to include percent change in salary
+
+### Adding in salary change amount
+Players_all_17_20$Difference <- (Players_all_17_20$`Total Comp`-Players_all_17_20$`Base Salary`)
+
+### Adding salary percent change by season
+Players_all_17_20$Pct_Difference <- round(((Players_all_17_20$Difference)/(Players_all_17_20$`Total Comp`))*100,digits=2)
+
+### Creating a subset of regular season games
+Players_all_17_20_Reg <- Players_all_17_20 %>%
+  filter(Season == "reg")
+
+```
+
+
+Just when I think I have solved it, new problems crop up. It seems like there is a mistake in the active players list so the clubs are inaccurate. I can either pivot the clubs from the salaries data and join it into the main dataset or try to figure out why the clubs are not showing correctly in the active players data. 
+
+I also want to calculate percent change, but I might need to do that before pivoting the data. Just kidding! After pivoting wider, I can now do it easily in the cleaned data.
+
+# Goals and Assists   
+
+```{r salary graph, warning = F, message=FALSE, fig.width=12, fig.height=10}
+
+
+Players_all_17_20 <- Players_all_17_20 %>%
+  group_by(Player) %>%
+  add_count(Player)
+
+options(scipen = 999)
+
+
+
+sal_19_plot <- Players_all_17_20 %>%
+  filter(Year == 2019 & Season == "reg") %>%
+  ggplot(aes(x = `Goals/90`, y = `Total Comp`), label = Player) +
+  geom_point(aes(color = POS, text = Player), show.legend = F) +
+  coord_flip() +
+  facet_wrap(~POS)+
+  theme_minimal() +
+  labs(title = "Goals per 90 by Total Compensation") +
+  scale_x_log10(n.breaks = 8) +
+  xlim(0,4)
+
+sal_19_plot + stat_cor(aes(x = `Goals/90`, y = `Total Comp`), data = Players_all_17_20, label.y = 10000, label.x = 4.2,  p.accuracy = 0.001)
+
+ggplotly(sal_19_plot, tooltip = c("Player", "Total Comp", "Goals/90"))
+  
+```
+
+
+```{r salary assists, fig.width=12, fig.height=10, message=FALSE, warning=FALSE}
+
+sal_19_plot2 <- Players_all_17_20 %>%
+  filter(Year == 2019 & Season == "reg") %>%
+  ggplot(aes(x = `Assists/90`, y = `Total Comp`), label = Player) +
+  geom_point(aes(color = POS, text = Player), show.legend = F) +
+  coord_flip() +
+  facet_wrap(~POS)+
+  theme_minimal() +
+  labs(title = "Assists per 90 by total compensation") +
+  scale_x_log10(n.breaks = 8) +
+  xlim(0,1.5)
+
+ggplotly(sal_19_plot2, tooltip = c("Player", "Total Comp", "Assists/90", "MINS"))
+
+
+```
+
+```{r salary goals, fig.width=12, fig.height=10, message=FALSE, warning=FALSE}
+
+sal_19_plot3 <- Players_all_17_20 %>%
+  filter(Year == 2019 & Season == "reg") %>%
+  select(Player, Goals, `Total Comp`, POS, MINS) %>%
+  ggplot(aes(x = Goals, y = `Total Comp`), label = Player) +
+  geom_point(aes(color = POS, text = Player), show.legend = F) +
+  coord_flip() +
+  facet_wrap(~POS)+
+  theme_minimal() +
+  labs(title = "Goals by Total Compensation") +
+  scale_x_log10(n.breaks = 8)
+
+ggplotly(sal_19_plot3, tooltip = c("Player", "Total Comp", "Goals"))
+
+
+```
+
+```{r plot contributions, include=FALSE}
+
+# Players_all_17_20$Contrib <- Players_all_17_20$Contrib %>%
+#   group_by(Player, Year) %>%
+#   mutate(Contrib = sum(Goals + Assists))
+
+# sal_19_plot4 <- Players_all_17_20 %>%
+#   filter(Year == 2019 & Season == "reg") %>%
+#   ggplot(aes(x = `Contrib`, y = `Total Comp`), label = Player) +
+#   geom_point(aes(color = POS, text = Player), position = "jitter", show.legend = FALSE) +
+#   coord_flip() +
+#   theme_minimal()
+# 
+# ggplotly(sal_19_plot4, tooltip = c("Player", "Total Comp", "Contrib"))
+# 
+# 
+# sal_19_plot5 <- Players_all_17_20 %>%
+#   filter(Season == "reg") %>%
+#   group_by(Year) %>%
+#   ggplot(aes(x = `Contrib`, y = `Total Comp`), label = Player) +
+#   geom_point(aes(color = POS, text = Player), position = "jitter", show.legend = F) +
+#   coord_flip() +
+#   facet_wrap(~Year)+
+#   theme_minimal() +
+#   scale_x_log10(n.breaks = 8)
+# 
+# ggplotly(sal_19_plot5, tooltip = c("Player", "Total Comp", "Contrib"))
+
+
+```
+
+
+# Salary Data  
+Finally, we can look at some player salary data
+
+```{r player money, fig.width=12, fig.height=10, message=FALSE, warning=FALSE, include=FALSE}
+sal_plot <- Players_all_17_20_Reg %>%
+  group_by(Player, Year) %>%
+  ggplot(aes(x = Year, y = `Total Comp`), label = Player) +
+  geom_line(aes(color = POS, text = Player), show.legend = F) +
+  theme_minimal() +
+  labs(title = "Total Compensation by player across years (grouped by position)") +
+  facet_wrap(~POS, nrow = 4, ncol = 1) +
+  scale_y_log10(n.breaks = 8)
+
+ggplotly(sal_plot, tooltip = c("Player", "Total Comp"))
+
+
+```
+I mean I can see the players but it is too crowded to get much from it. I am going to look at Minnesota United since they are the team I support.
+
+```{r, fig.width=10, fig.height=8, message=FALSE, warning=FALSE}
+sal_plot <- Players_all_17_20_Reg %>%
+  filter(Club == "Minnesota United") %>%
+  group_by(Player, Year) %>%
+  ggplot(aes(x = Year, y = `Total Comp`), label = Player) +
+  geom_line(aes(color = POS, text = Player), show.legend = F) +
+  theme_minimal() +
+  scale_y_log10(n.breaks = 8) +
+  labs(title = "Minnesota United Player wages by year")
+
+ggplotly(sal_plot, tooltip = c("Player", "Total Comp"))
+
+```
+
+Still not that helpful
+
+## Club level salaries
+
+```{r, fig.width=12, fig.height=10, message=FALSE, warning=FALSE}
+Players_all_17_20_Reg %>%
+  filter(Club != "Retired" & Club != "Major League Soccer") %>%
+  group_by(Year, Club) %>%
+  summarize(Club_avg = mean(`Total Comp`)) %>%
+  ggplot(aes(x = Club_avg, y = reorder(Club, Club_avg))) +
+  geom_col(aes(fill = Club), position = "dodge", show.legend = FALSE) +
+  theme_minimal() +
+  facet_wrap(~Year) +
+  scale_fill_viridis_d() +
+  coord_flip() +
+  labs(x = "Average Total Compensation", y = "", title = "Average Total Compensation by Club (By Year: 2017-2020)") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1.1, hjust = 1))
+  
+              
+
+```
+
+```{r, fig.width=12, fig.height=10, message=FALSE, warning=FALSE}
+Players_all_17_20_Reg %>%
+  filter(Club != "Retired" & Club != "Major League Soccer") %>%
+  group_by(Year, Club) %>%
+  summarize(Club_avg = sum(`Total Comp`)) %>%
+  ggplot(aes(x = Club_avg, y = reorder(Club, Club_avg))) +
+  geom_col(aes(fill = Club), position = "dodge", show.legend = FALSE) +
+  theme_minimal() +
+  facet_wrap(~Year) +
+  scale_fill_viridis_d(option = "magma") +
+  coord_flip() +
+  labs(x = "Sum Total Compensation", y = "", title = "Total Compensation of Player Wages by Club (By Year: 2017-2020)") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1.1, hjust = 1))
+  
+              
+
+```
+
+```{r, fig.width=12, fig.height=10, message=FALSE, warning=FALSE}
+Players_all_17_20_Reg %>%
+  filter(Club != "Retired" & Club != "Major League Soccer") %>%
+  group_by(Club) %>%
+  summarize(Club_avg = sum(`Total Comp`)) %>%
+  ggplot(aes(x = Club_avg, y = reorder(Club, Club_avg))) +
+  geom_col(aes(fill = Club), position = "dodge", show.legend = FALSE) +
+  theme_minimal() +
+  scale_fill_viridis_d() +
+  coord_flip() +
+  labs(x = "Average Wages", y = "", "Total ", title = "Average wages across years by Club") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1.1, hjust = 1))
+  
+              
+
+```
+
+I know this doesn't look like much but it took so long to get this data cleaned and into R. 
+
+Now I think I should probably add in the goal keeper data so that I can see the real club expenditure.
+
+In addition, I probably should keep all players, even those that didn't play.
+
+
+### Update    
+I think the player data has been cleaned now. 
+
+If I want to answer the question about does player data x have a correlation with club stat y I will need to read in match data to use, but for now, I can at least compare players across 2017-2018 and club expenditure as well.
+
+# Foul Data
+```{r, fig.width=10, fig.height=8, message=FALSE, warning=FALSE}
+sal_plot <- Players_all_17_20_Reg %>%
+  filter(Year == 2017 & POS != "GK") %>%
+  group_by("POS") %>%
+  ggplot() +
+  geom_point(aes(x = `Total Comp`, y = `Fouls Suffered`, color = POS, text = Player), show.legend = T) +
+  theme_fivethirtyeight()+
+  labs(title = "Fouls Suffered by Salary", subtitle = "Position, not salary determine fouls suffered")
+
+ggplotly(sal_plot, tooltip = c("Player", "Fouls Suffered"))
+
+
+
+```
+
+```{r, fig.width=10, fig.height=8, message=FALSE, warning=FALSE}
+sal_plot <- Players_all_17_20_Reg %>%
+  filter(Year == 2017 & POS != "GK") %>%
+  group_by("POS") %>%
+  ggplot() +
+  geom_point(aes(x = `Total Comp`, y = `Fouls`, color = POS, text = Player), show.legend = T) +
+  theme_fivethirtyeight()+
+  labs(title = "Fouls by Salary", subtitle = "Position, not salary determine fouls")
+
+ggplotly(sal_plot, tooltip = c("Player", "Fouls"))
+
+```
+
+
+```{r, fig.width=10, fig.height=8, message=FALSE, warning=FALSE}
+sal_plot <- Players_all_17_20_Reg %>%
+  filter(Year == 2017 & POS != "GK") %>%
+  group_by("POS") %>%
+  ggplot() +
+  geom_point(aes(x = `Fouls Suffered`, y = `Fouls`, color = POS, text = Player), show.legend = T, position = "jitter") +
+  theme_minimal()+
+  labs(title = "Fouls by Fouls Suffered", x = "Fouls Suffered", y = "Fouls")
+
+ggplotly(sal_plot, tooltip = c("Player", "Fouls", "Fouls Suffered"))
+
+```
+
+I realized that I would like to add in race/ethnicity data but in the process I found out that I could not find that data. However, I was able to find data on player nationality based on playing youth or senior level international games and/or player stated nationality. I recognize it is not the same as race data as a player from the US could be black, white, latine, or other races, but nationality is as close as I can get. Other countries, such as Colombia or Mexico are more homogeneous. I will not make any claims of race though to be cautious.  
+
+# Nationality Data
+
+```{r}
+require(countrycode)
+### Data from Fbref on 2020 player data and nationality
+# Importing
+Nation_20 <- import(here("Data/2020_player_nation_sal.csv"))
+
+# Removing the wages data because I already have this data and there are discrepancies
+Nation_20 <- Nation_20 %>% select(-c("Weekly Wages", "Annual Wages"))
+
+# From homework 4, getting the country codes
+country_codes <- countrycode::codelist %>% 
+  filter(ecb != 'NA') %>%
+  select(country_name = country.name.en, country = ecb) 
+
+# making the country codes lower case because I need to match with Nation_20
+country_codes$country <- str_to_lower(country_codes$country)
+
+# Merging together to get country names
+Nation_20 <- merge(Nation_20, country_codes, by =  "country")
+
+# Remvoing accent marks from names to make merging easier
+Nation_20$Player <- stri_trans_general(Nation_20$Player, id = "Latin-ASCII")
+
+### Remove dash from names to match original data
+Nation_20$Player <- gsub("-", "", Nation_20$Player)
+
+
+### Merging but I need to figure out how to merge year so that it does not delete the 2017 data.
+Players_all_17_20_Reg_Nation <- merge(Players_all_17_20_Reg, Nation_20, by = c("Player", "Year"), all = TRUE)
+
+### Removing duplicate column and empty column
+Players_all_17_20_Reg_Nation <- Players_all_17_20_Reg_Nation %>% select(-c("V9"))
+
+```
+
+This dataset is getting to be a little overwhelming, but I think it has all the information needed now.
+
+```{r, warning = F, message= F, fig.width=12, fig.height=10}
+## Creating a column by country count
+Players_all_17_20_Reg_Nation <- Players_all_17_20_Reg_Nation %>%
+  group_by(country, Year) %>%
+  add_count(country)
+
+## average compensation
+Players_all_17_20_Reg_Nation <- Players_all_17_20_Reg_Nation %>%
+  group_by(country) %>%
+  mutate(country_comp = mean(`Total Comp`, na.rm = TRUE))
+
+## average minutes
+Players_all_17_20_Reg_Nation <- Players_all_17_20_Reg_Nation %>%
+  group_by(country) %>%
+  mutate(country_mins = mean(MINS, na.rm = TRUE))
+
+## Plot of player average minutes and average comp by country
+nation_player_plot <- Players_all_17_20_Reg_Nation %>%
+  group_by(Player) %>%
+  ggplot(aes(x = country_mins, y = country_comp)) + 
+  geom_point(aes(size = n), colour = ifelse(Players_all_17_20_Reg_Nation$n > 20,"darkorchid","gray"), alpha = 0.5) +
+  geom_text(data = Players_all_17_20_Reg_Nation |> dplyr::filter(n > 20),
+            aes(label = country_name), check_overlap = TRUE, nudge_y = 0.1, nudge_x = -0.12) +
+  scale_size_binned(name = "Players per Country", breaks = c(5,25,50)) +
+  theme_minimal() +
+  labs(x = "Average Minutes played per season by country", 
+       y = "Average Total compensation by country") +
+  theme(legend.position = 'bottom') +
+  labs(title = "Higher paid players tend to play more", subtitle = "Average Player minutes by Average Total Compensation with player nationality")
+
+ggplotly(nation_player_plot)
+
+```
+The United States, Argentina, Brazil, and Canada all have the most players in the MLS. The 5th group is a combination of players with no nationality data. 
+
+### Average Wages by Country
+
+```{r, fig.width=14, fig.height=8, message=FALSE, warning=FALSE}
+
+
+Players_all_17_20_Reg_Nation %>%
+  filter(Club != "Retired" & Club != "Major League Soccer" & country_name != "NA") %>%
+  group_by(country_name) %>%
+  ggplot(aes(x = country_comp, y = reorder(country_name, country_comp))) +
+  geom_col(aes(fill = country_name), position = "dodge", show.legend = FALSE) +
+  theme_minimal() +
+  scale_fill_viridis_d() +
+  coord_flip() +
+  labs(x = "Average Wages", y = "", title = "Average wages by country") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1.1, hjust = 1))
+
+
+
+
+```
+
+```{r, fig.width=12, fig.height=10, message=FALSE, warning=FALSE}
+
+Players_all_17_20_Reg_Nation %>%
+  filter(Club != "Retired" & Club != "Major League Soccer" & country_name != "NA" & n >= 15) %>%
+  group_by(country_name) %>%
+  ggplot(aes(x = country_comp, y = reorder(country_name, country_comp))) +
+  geom_col(aes(fill = country_name), position = "dodge", show.legend = FALSE) +
+  theme_minimal() +
+  scale_fill_viridis_d() +
+  coord_flip() +
+  labs(x = "Average Wages", y = "", title = "Average wages by country (With at least 15 players in the league)") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1.1, hjust = 1))
+
+```
+
+
+```{r dashboard}
+#install.packages("flexdashboard")
+library(flexdashboard)
+
+
+```

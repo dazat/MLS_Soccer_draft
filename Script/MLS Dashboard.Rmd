@@ -1,0 +1,59 @@
+---
+title: "MLS Player Dashboard"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: scroll
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+```
+Page 1
+=========================
+
+Column {data-width=10}
+-----------------------------------------------------------------------
+
+### Chart A
+
+Column {data-width=10}
+-----------------------------------------------------------------------
+
+### Chart B
+
+```{r}
+#Column widths are relative sizes. In theory you can use either rows or columns but I dont think you can use both.
+```
+
+Column {data-width=10}
+-----------------------------------------------------------------------
+
+### Chart C
+
+```{r}
+
+```
+
+### Chart D
+
+```{r}
+
+```
+
+
+Page 2
+=================
+
+Column 1
+----------------------
+
+### Chart A
+
+Page 3
+==================
+
+Row 1
+-------------------
+
+### Chart A
